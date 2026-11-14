@@ -80,7 +80,7 @@
       }
 
       if (!endpoint) {
-        show("The form is not configured yet. Use GitHub, LinkedIn, or X instead.", true);
+        show("The contact form is not configured. Add the Google Apps Script /exec URL in scripts/config.js, or use GitHub, LinkedIn, or X instead.", true);
         return;
       }
 
@@ -100,26 +100,23 @@
 
       fetch(endpoint, {
         method: "POST",
+        mode: "cors",
+        cache: "no-store",
+        credentials: "omit",
         redirect: "follow",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload)
       }).then(function (response) {
         return response.text().then(function (text) {
-          var result = null;
-          try {
-            result = JSON.parse(text);
-          } catch (err) {
-            result = null;
-          }
-          if (!response.ok || !result || result.ok !== true) {
-            throw new Error((result && result.error) || "Submit failed");
-          }
+          var result = parseScriptJson(text);
+          if (result && result.ok === true) return;
+          throw new Error(scriptErrorMessage(response, text, result));
         });
       }).then(function () {
         form.reset();
         show("Thanks. I'll get back to you.");
-      }).catch(function () {
-        show("The message could not be sent. Try again, or use GitHub, LinkedIn, or X instead.", true);
+      }).catch(function (err) {
+        show(networkOrScriptError(err), true);
       }).then(function () {
         if (button) button.disabled = false;
       });
@@ -130,8 +127,52 @@
     var fromForm = formEl.getAttribute("data-script-url");
     var fromConfig = window.PORTFOLIO_CONFIG && window.PORTFOLIO_CONFIG.googleScriptWebAppUrl;
     var url = String(fromForm || fromConfig || "").trim();
-    if (!url || url.indexOf("YOUR_GOOGLE_SCRIPT") !== -1) return "";
+    if (!url || isPlaceholderEndpoint(url)) return "";
     return url;
+  }
+
+  function isPlaceholderEndpoint(url) {
+    var value = String(url || "").toLowerCase();
+    return (
+      value.indexOf("your_google_script") !== -1 ||
+      value.indexOf("your_deployment") !== -1 ||
+      value.indexOf("placeholder") !== -1 ||
+      value.indexOf("example.com") !== -1
+    );
+  }
+
+  function parseScriptJson(text) {
+    var trimmed = String(text || "").replace(/^\s+/, "");
+    if (!trimmed || trimmed.charAt(0) !== "{") return null;
+    try {
+      var parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function scriptErrorMessage(response, text, result) {
+    if (result && result.error) return String(result.error);
+    var blob = String(text || "").toLowerCase();
+    var denied = blob.indexOf("access denied") !== -1 || blob.indexOf("you need access") !== -1;
+    if ((response && (response.status === 401 || response.status === 403)) || denied) {
+      return "The contact service is not publicly accessible. Redeploy the Apps Script web app with “Who has access: Anyone”, then update scripts/config.js if the /exec URL changed.";
+    }
+    return "The contact service did not return a valid response. Check the Apps Script /exec URL and deployment.";
+  }
+
+  function networkOrScriptError(err) {
+    var message = err && err.message ? String(err.message) : "";
+    if (
+      !message ||
+      message === "Failed to fetch" ||
+      message === "Load failed" ||
+      message === "NetworkError when attempting to fetch resource."
+    ) {
+      return "Could not reach the contact service. Confirm the Apps Script /exec URL, deploy it with access set to Anyone, and try again. Or use GitHub, LinkedIn, or X.";
+    }
+    return message;
   }
 
   if (reduceMotion) return;

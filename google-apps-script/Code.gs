@@ -228,7 +228,8 @@ function sendContactEmail(recipient, fields) {
 }
 
 function jsonOutput(obj) {
+  // TEXT (not JSON) avoids a CORS preflight on the redirected googleusercontent response.
   return ContentService
     .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+    .setMimeType(ContentService.MimeType.TEXT);
 }
