@@ -401,10 +401,9 @@
     <section class="section" id="contact">
       <div class="section__inner section__inner--narrow">
         <h2 class="section-title section-title--center">Get in touch</h2>
-        <p class="section-intro">Available for hire. This form is hosted with the site on Netlify. You can also reach me on GitHub, LinkedIn, or X.</p>
+        <p class="section-intro">Available for hire. You can also reach me on GitHub, LinkedIn, or X.</p>
 
-        <form class="contact-form" name="contact" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/">
-          <input type="hidden" name="form-name" value="contact">
+        <form class="contact-form" name="contact" method="POST">
           <p class="honeypot" aria-hidden="true">
             <label>Leave this field empty <input type="text" name="bot-field" tabindex="-1" autocomplete="off"></label>
           </p>
@@ -484,6 +483,7 @@
     </div>
   </footer>
 
+  <script src="scripts/config.js" defer></script>
   <script src="scripts/main.js" defer></script>
 </body>
 </html>

@@ -69,7 +69,8 @@
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var status = form.querySelector(".form-status");
-      var data = new FormData(form);
+      var button = form.querySelector('button[type="submit"]');
+      var endpoint = getContactEndpoint(form);
 
       function show(message, isError) {
         if (!status) return;
@@ -78,18 +79,59 @@
         status.classList.toggle("is-error", Boolean(isError));
       }
 
-      fetch("/", {
+      if (!endpoint) {
+        show("The form is not configured yet. Use GitHub, LinkedIn, or X instead.", true);
+        return;
+      }
+
+      var data = new FormData(form);
+      var payload = {
+        first_name: String(data.get("first_name") || ""),
+        last_name: String(data.get("last_name") || ""),
+        name: [data.get("first_name"), data.get("last_name")].filter(Boolean).join(" ").trim(),
+        email: String(data.get("email") || ""),
+        subject: String(data.get("subject") || ""),
+        message: String(data.get("message") || ""),
+        "bot-field": String(data.get("bot-field") || "")
+      };
+
+      if (button) button.disabled = true;
+      show("Sending…");
+
+      fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams(data).toString()
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
       }).then(function (response) {
-        if (!response.ok) throw new Error("Submit failed");
+        return response.text().then(function (text) {
+          var result = null;
+          try {
+            result = JSON.parse(text);
+          } catch (err) {
+            result = null;
+          }
+          if (!response.ok || !result || result.ok !== true) {
+            throw new Error((result && result.error) || "Submit failed");
+          }
+        });
+      }).then(function () {
         form.reset();
         show("Thanks. I'll get back to you.");
       }).catch(function () {
-        show("The form could not send from this preview. Use GitHub, LinkedIn, or X instead.", true);
+        show("The message could not be sent. Try again, or use GitHub, LinkedIn, or X instead.", true);
+      }).then(function () {
+        if (button) button.disabled = false;
       });
     });
+  }
+
+  function getContactEndpoint(formEl) {
+    var fromForm = formEl.getAttribute("data-script-url");
+    var fromConfig = window.PORTFOLIO_CONFIG && window.PORTFOLIO_CONFIG.googleScriptWebAppUrl;
+    var url = String(fromForm || fromConfig || "").trim();
+    if (!url || url.indexOf("YOUR_GOOGLE_SCRIPT") !== -1) return "";
+    return url;
   }
 
   if (reduceMotion) return;
