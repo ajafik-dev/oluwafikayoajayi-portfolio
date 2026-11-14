@@ -62,6 +62,9 @@ function doPost(e) {
     appendToSheet(fields);
     return jsonOutput({ ok: true });
   } catch (err) {
+    if (err && String(err.message) === 'INVALID_JSON') {
+      return jsonOutput({ ok: false, error: 'Invalid request.' });
+    }
     return jsonOutput({ ok: false, error: 'The message could not be sent.' });
   }
 }
@@ -138,14 +141,18 @@ function parsePayload(e) {
 
   if (e.postData && e.postData.contents) {
     var contents = String(e.postData.contents);
+    if (!contents.replace(/^\s+|\s+$/g, '')) {
+      return data;
+    }
     var type = String(e.postData.type || '').toLowerCase();
     var parsed = null;
+    var shouldParse = type.indexOf('application/json') !== -1 || type.indexOf('text/plain') !== -1 || looksLikeJson(contents);
 
-    if (type.indexOf('application/json') !== -1 || type.indexOf('text/plain') !== -1 || looksLikeJson(contents)) {
+    if (shouldParse) {
       try {
         parsed = JSON.parse(contents);
       } catch (err) {
-        parsed = null;
+        throw new Error('INVALID_JSON');
       }
     }
 
@@ -153,6 +160,8 @@ function parsePayload(e) {
       Object.keys(parsed).forEach(function (key) {
         data[key] = parsed[key];
       });
+    } else if (parsed != null) {
+      throw new Error('INVALID_JSON');
     }
   }
 
@@ -173,16 +182,16 @@ function honeypotFilled(data) {
 }
 
 function normalizeFields(data) {
-  var first = str(data.first_name);
-  var last = str(data.last_name);
-  var combined = str(data.name);
+  var first = clip(str(data.first_name), MAX_NAME);
+  var last = clip(str(data.last_name), MAX_NAME);
+  var combined = clip(str(data.name), MAX_NAME);
   var name = combined || [first, last].filter(Boolean).join(' ');
 
   return {
-    name: name.slice(0, MAX_NAME),
-    email: str(data.email).slice(0, MAX_EMAIL),
-    subject: str(data.subject).slice(0, MAX_SUBJECT),
-    message: str(data.message).slice(0, MAX_MESSAGE)
+    name: clip(name, MAX_NAME),
+    email: clip(str(data.email).toLowerCase(), MAX_EMAIL),
+    subject: clip(str(data.subject), MAX_SUBJECT),
+    message: clip(str(data.message), MAX_MESSAGE)
   };
 }
 
@@ -192,6 +201,10 @@ function validateFields(fields) {
   if (!isValidEmail(fields.email)) return 'Email is invalid.';
   if (!fields.message) return 'Message is required.';
   return '';
+}
+
+function clip(value, max) {
+  return String(value || '').slice(0, max);
 }
 
 function isValidEmail(email) {
@@ -229,7 +242,14 @@ function sendContactEmail(recipient, fields) {
 
 function jsonOutput(obj) {
   // TEXT (not JSON) avoids a CORS preflight on the redirected googleusercontent response.
+  var payload = obj && typeof obj === 'object' ? obj : { ok: false, error: 'The message could not be sent.' };
+  var body;
+  try {
+    body = JSON.stringify(payload);
+  } catch (err) {
+    body = '{"ok":false,"error":"The message could not be sent."}';
+  }
   return ContentService
-    .createTextOutput(JSON.stringify(obj))
+    .createTextOutput(body)
     .setMimeType(ContentService.MimeType.TEXT);
 }

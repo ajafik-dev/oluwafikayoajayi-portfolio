@@ -66,62 +66,103 @@
 
   var form = document.querySelector(".contact-form");
   if (form) {
+    var status = form.querySelector(".form-status");
+    var button = form.querySelector('button[type="submit"]');
+    var idleLabel = button ? button.textContent : "Send message";
+    var submitting = false;
+
+    form.addEventListener("input", function (event) {
+      var target = event.target;
+      if (!target || !target.classList || !target.classList.contains("is-invalid")) return;
+      target.classList.remove("is-invalid");
+      target.removeAttribute("aria-invalid");
+      target.removeAttribute("aria-describedby");
+      var slot = target.id ? document.getElementById(target.id + "-error") : null;
+      if (slot) {
+        slot.hidden = true;
+        slot.textContent = "";
+      }
+    });
+
     form.addEventListener("submit", function (event) {
       event.preventDefault();
-      var status = form.querySelector(".form-status");
-      var button = form.querySelector('button[type="submit"]');
-      var endpoint = getContactEndpoint(form);
+      if (submitting) return;
 
-      function show(message, isError) {
-        if (!status) return;
-        status.hidden = false;
-        status.textContent = message;
-        status.classList.toggle("is-error", Boolean(isError));
+      clearFieldErrors(form);
+      hideStatus();
+
+      var firstInvalid = validateContactFields(form);
+      if (firstInvalid) {
+        firstInvalid.focus();
+        return;
       }
 
+      var endpoint = getContactEndpoint(form);
       if (!endpoint) {
-        show("The contact form is not configured. Add the Google Apps Script /exec URL in scripts/config.js, or use GitHub, LinkedIn, or X instead.", true);
+        showStatus("The contact form is not configured. Use GitHub, LinkedIn, or X instead.", "error");
         return;
       }
 
       var data = new FormData(form);
+      var firstName = String(data.get("first_name") || "").trim();
+      var lastName = String(data.get("last_name") || "").trim();
       var payload = {
-        first_name: String(data.get("first_name") || ""),
-        last_name: String(data.get("last_name") || ""),
-        name: [data.get("first_name"), data.get("last_name")].filter(Boolean).join(" ").trim(),
-        email: String(data.get("email") || ""),
-        subject: String(data.get("subject") || ""),
-        message: String(data.get("message") || ""),
+        first_name: firstName,
+        last_name: lastName,
+        name: [firstName, lastName].filter(Boolean).join(" "),
+        email: String(data.get("email") || "").trim(),
+        subject: String(data.get("subject") || "").trim(),
+        message: String(data.get("message") || "").trim(),
         "bot-field": String(data.get("bot-field") || "")
       };
 
-      if (button) button.disabled = true;
-      show("Sending…");
+      setBusy(true);
+      showStatus("Sending…", "pending");
 
-      fetch(endpoint, {
-        method: "POST",
-        mode: "cors",
-        cache: "no-store",
-        credentials: "omit",
-        redirect: "follow",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload)
-      }).then(function (response) {
-        return response.text().then(function (text) {
-          var result = parseScriptJson(text);
-          if (result && result.ok === true) return;
-          throw new Error(scriptErrorMessage(response, text, result));
+      postContact(endpoint, payload, true)
+        .then(function () {
+          clearFieldErrors(form);
+          form.reset();
+          showStatus("Thanks. I'll get back to you.", "success");
+        })
+        .catch(function (err) {
+          showStatus(networkOrScriptError(err), "error");
+        })
+        .then(function () {
+          setBusy(false);
         });
-      }).then(function () {
-        form.reset();
-        show("Thanks. I'll get back to you.");
-      }).catch(function (err) {
-        show(networkOrScriptError(err), true);
-      }).then(function () {
-        if (button) button.disabled = false;
-      });
     });
+
+    function setBusy(busy) {
+      submitting = busy;
+      form.setAttribute("aria-busy", busy ? "true" : "false");
+      if (!button) return;
+      button.disabled = busy;
+      button.setAttribute("aria-busy", busy ? "true" : "false");
+      button.textContent = busy ? "Sending…" : idleLabel;
+    }
+
+    function hideStatus() {
+      if (!status) return;
+      status.hidden = true;
+      status.textContent = "";
+      status.classList.remove("is-error", "is-success", "is-pending");
+    }
+
+    function showStatus(message, kind) {
+      if (!status) return;
+      status.hidden = false;
+      status.textContent = message;
+      status.classList.toggle("is-pending", kind === "pending");
+      status.classList.toggle("is-success", kind === "success");
+      status.classList.toggle("is-error", kind === "error");
+      if (kind === "success" || kind === "error") {
+        status.focus();
+      }
+    }
   }
+
+  var FETCH_TIMEOUT_MS = 20000;
 
   function getContactEndpoint(formEl) {
     var fromForm = formEl.getAttribute("data-script-url");
@@ -141,12 +182,148 @@
     );
   }
 
+  function validateContactFields(formEl) {
+    var first = formEl.querySelector('[name="first_name"]');
+    var email = formEl.querySelector('[name="email"]');
+    var message = formEl.querySelector('[name="message"]');
+    var firstInvalid = null;
+
+    if (first && !String(first.value || "").trim()) {
+      setFieldError(first, "Enter your first name.");
+      firstInvalid = firstInvalid || first;
+    }
+
+    if (email) {
+      var emailValue = String(email.value || "").trim();
+      if (!emailValue) {
+        setFieldError(email, "Enter your email address.");
+        firstInvalid = firstInvalid || email;
+      } else if (!isValidEmail(emailValue)) {
+        setFieldError(email, "Enter a valid email address.");
+        firstInvalid = firstInvalid || email;
+      }
+    }
+
+    if (message && !String(message.value || "").trim()) {
+      setFieldError(message, "Enter a message.");
+      firstInvalid = firstInvalid || message;
+    }
+
+    return firstInvalid;
+  }
+
+  function setFieldError(input, message) {
+    input.classList.add("is-invalid");
+    input.setAttribute("aria-invalid", "true");
+    var slot = input.id ? document.getElementById(input.id + "-error") : null;
+    if (slot) {
+      slot.hidden = false;
+      slot.textContent = message;
+      input.setAttribute("aria-describedby", slot.id);
+    }
+  }
+
+  function clearFieldErrors(formEl) {
+    formEl.querySelectorAll(".is-invalid").forEach(function (input) {
+      input.classList.remove("is-invalid");
+      input.removeAttribute("aria-invalid");
+      input.removeAttribute("aria-describedby");
+    });
+    formEl.querySelectorAll(".form-field-error").forEach(function (slot) {
+      slot.hidden = true;
+      slot.textContent = "";
+    });
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function postContact(endpoint, payload, allowRetry) {
+    return fetchContact(endpoint, payload).catch(function (err) {
+      if (allowRetry && isRetryableNetworkError(err)) {
+        return wait(400).then(function () {
+          return fetchContact(endpoint, payload);
+        });
+      }
+      throw err;
+    });
+  }
+
+  function fetchContact(endpoint, payload) {
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = null;
+    var options = {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "follow",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    };
+
+    if (controller) {
+      options.signal = controller.signal;
+      timer = window.setTimeout(function () {
+        controller.abort();
+      }, FETCH_TIMEOUT_MS);
+    }
+
+    return fetch(endpoint, options)
+      .then(function (response) {
+        return response.text().then(
+          function (text) {
+            return { response: response, text: text };
+          },
+          function () {
+            return { response: response, text: "" };
+          }
+        );
+      })
+      .then(function (pack) {
+        var result = parseScriptJson(pack.text);
+        if (result && result.ok === true) return result;
+        throw new Error(scriptErrorMessage(pack.response, pack.text, result));
+      })
+      .then(
+        function (result) {
+          if (timer) window.clearTimeout(timer);
+          return result;
+        },
+        function (err) {
+          if (timer) window.clearTimeout(timer);
+          throw err;
+        }
+      );
+  }
+
+  function wait(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function isRetryableNetworkError(err) {
+    if (!err || err.name === "AbortError") return false;
+    var message = err.message ? String(err.message) : "";
+    return (
+      message === "Failed to fetch" ||
+      message === "Load failed" ||
+      message === "NetworkError when attempting to fetch resource." ||
+      message.indexOf("NetworkError") !== -1
+    );
+  }
+
   function parseScriptJson(text) {
-    var trimmed = String(text || "").replace(/^\s+/, "");
-    if (!trimmed || trimmed.charAt(0) !== "{") return null;
+    var raw = String(text || "").replace(/^\uFEFF/, "").replace(/^\s+/, "");
+    if (!raw) return null;
+    var start = raw.indexOf("{");
+    var end = raw.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
     try {
-      var parsed = JSON.parse(trimmed);
-      return parsed && typeof parsed === "object" ? parsed : null;
+      var parsed = JSON.parse(raw.slice(start, end + 1));
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
     } catch (err) {
       return null;
     }
@@ -154,23 +331,32 @@
 
   function scriptErrorMessage(response, text, result) {
     if (result && result.error) return String(result.error);
+    var status = response && response.status;
     var blob = String(text || "").toLowerCase();
-    var denied = blob.indexOf("access denied") !== -1 || blob.indexOf("you need access") !== -1;
-    if ((response && (response.status === 401 || response.status === 403)) || denied) {
-      return "The contact service is not publicly accessible. Redeploy the Apps Script web app with “Who has access: Anyone”, then update scripts/config.js if the /exec URL changed.";
+    var denied =
+      blob.indexOf("access denied") !== -1 ||
+      blob.indexOf("you need access") !== -1 ||
+      blob.indexOf("authorization is required") !== -1 ||
+      blob.indexOf("sign in to continue") !== -1;
+    if (status === 401 || status === 403 || denied) {
+      return "The contact service is not publicly accessible. Try GitHub, LinkedIn, or X, or check that the Apps Script web app is deployed with access set to Anyone.";
     }
-    return "The contact service did not return a valid response. Check the Apps Script /exec URL and deployment.";
+    return "The contact service did not return a valid response. Try again, or use GitHub, LinkedIn, or X.";
   }
 
   function networkOrScriptError(err) {
+    if (err && err.name === "AbortError") {
+      return "The contact service took too long to respond. Try again, or use GitHub, LinkedIn, or X.";
+    }
     var message = err && err.message ? String(err.message) : "";
     if (
       !message ||
       message === "Failed to fetch" ||
       message === "Load failed" ||
-      message === "NetworkError when attempting to fetch resource."
+      message === "NetworkError when attempting to fetch resource." ||
+      message.indexOf("NetworkError") !== -1
     ) {
-      return "Could not reach the contact service. Confirm the Apps Script /exec URL, deploy it with access set to Anyone, and try again. Or use GitHub, LinkedIn, or X.";
+      return "Could not reach the contact service. Check your connection and try again, or use GitHub, LinkedIn, or X.";
     }
     return message;
   }

@@ -8,6 +8,7 @@
   --navy-deep: #08151f;
   --sea: #0f6e63;
   --sea-dark: #0b5249;
+  --danger: #9b2c2c;
   --cyan: #2eb8d6;
   --cyan-soft: #c5ecf5;
   --mist: #e7eef2;
@@ -359,6 +360,12 @@ a:hover {
 .btn--primary:hover {
   background: var(--sea-dark);
   color: var(--white);
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  pointer-events: none;
 }
 
 .btn--quiet {
@@ -813,6 +820,25 @@ a:hover {
   outline-offset: 2px;
 }
 
+.form-field input.is-invalid,
+.form-field textarea.is-invalid {
+  border-bottom-color: var(--danger);
+}
+
+.form-field-error {
+  display: block;
+  margin-top: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--danger);
+}
+
+.form-field-error[hidden] {
+  display: none;
+}
+
 .honeypot {
   position: absolute;
   left: -10000px;
@@ -827,13 +853,39 @@ a:hover {
 
 .form-status {
   margin: 1rem 0 0;
+  padding: 0.7rem 0.9rem;
   font-family: var(--font-display);
   font-weight: 600;
   color: var(--sea);
+  background: rgba(15, 110, 99, 0.08);
+  border-left: 3px solid var(--sea);
+}
+
+.form-status:focus {
+  outline: none;
+}
+
+.form-status:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+
+.form-status.is-pending {
+  color: var(--ink-soft);
+  background: rgba(61, 85, 99, 0.08);
+  border-left-color: var(--ink-soft);
+}
+
+.form-status.is-success {
+  color: var(--sea);
+  background: rgba(15, 110, 99, 0.08);
+  border-left-color: var(--sea);
 }
 
 .form-status.is-error {
-  color: #8a2f2f;
+  color: var(--danger);
+  background: rgba(155, 44, 44, 0.08);
+  border-left-color: var(--danger);
 }
 
 .contact-links {
